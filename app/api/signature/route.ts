@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     const signature = generateSignature(
-      String(meetingNumber),
+      meetingNumber,
       typeof role === 'number' ? role : 0
     );
 

@@ -73,9 +73,17 @@ npm run dev
 ## Usage
 
 1. Open `http://localhost:3000`
-2. Click **Join as Teacher** to host a meeting
+2. Click **Join as Teacher** to host a meeting — **the teacher must join first** (otherwise students get error 3008 "meeting not started", unless the meeting has "join before host" enabled)
 3. Click **Join as Student** to join as a participant
 4. Verify audio, video, chat, screen share, and raise hand
+
+> **Note:** The meeting must already exist in Zoom (this POC uses a fixed meeting ID from `.env.local`). The Meeting SDK cannot create meetings — see `EVALUATION.md` §6.
+
+## Troubleshooting
+
+- **Stuck on "Joining meeting..." forever** — almost always a bad signature. Common causes: `tokenExp` set to a duration instead of an absolute Unix timestamp, clock skew, or SDK key/secret mismatch. The signature JWT payload is logged to the browser console (`[Zoom Debug] JWT payload`) for inspection.
+- **Error 3008** — meeting not started; join as teacher (host) first.
+- **Error 3712 / signature invalid** — check SDK key/secret pair and that the meeting belongs to the same Zoom account as the Marketplace app.
 
 ## Project Structure
 
@@ -96,6 +104,6 @@ npm run dev
 
 ## SDK Version
 
-- `@zoom/meetingsdk`: `6.2.0`
+- Zoom Meeting SDK (Client View): `6.2.0` — **loaded via CDN** (`source.zoom.us`), not npm, to avoid the SDK's React 18 peer-dependency conflict with React 19
 - Next.js: `16.2.10`
 - React: `19.2.4`

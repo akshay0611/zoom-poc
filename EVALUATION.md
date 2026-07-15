@@ -7,6 +7,19 @@
 - The client-side flow (`ZoomMtg.init` → `ZoomMtg.join`) is straightforward but uses callback-based APIs (no Promises) which feels dated.
 - Cross-Origin-Embedder-Policy (COEP) headers (`require-corp`) are required for `SharedArrayBuffer`, which can conflict with third-party resources.
 - The embedded component API (`EmbeddedClient`) is promise-based but missing some features vs the legacy `ZoomMtg` approach.
+- **This POC loads the SDK via CDN scripts** (`source.zoom.us`) instead of the npm package, to avoid the React 18 peer-dependency conflict with React 19 / Next.js 16 (see §6 Technical Constraints).
+
+### Gotchas Discovered During POC Development
+These cost real debugging time and are worth knowing before LMS integration:
+
+1. **`tokenExp` must be an absolute Unix timestamp, not a duration.** Setting it to a duration (e.g. `7200`) produces a signature that Zoom silently rejects — the SDK hangs on "Joining meeting..." forever with **no error callback fired**. It must equal a timestamp ≥ `iat + 1800`.
+2. **Signature failures are often silent.** Invalid JWT payloads frequently result in an infinite spinner rather than an error. A client-side join timeout with diagnostics is essential.
+3. **Error objects are unstructured.** `init`/`join` error callbacks receive `{ errorCode, errorMessage }` objects — naive `String(err)` gives `[object Object]`. Errors must be formatted explicitly.
+4. **Join order matters.** The host (role 1) must join before attendees, or attendees get error 3008 ("meeting not started") unless "join before host" is enabled on the meeting.
+5. **`getAttendeeslist` returns `{ result: { attendeesList: [...] } }`**, not a bare array — undocumented response shape.
+6. **The Client View SDK takes over the whole viewport.** It injects a full-page `#zmmtg-root` element at the document body level; any custom container div is ignored. Custom page chrome (headers, side panels) gets covered once the meeting starts.
+7. **Clock skew.** Backdating `iat` by ~30s avoids signature rejection when server clocks drift.
+8. **Meetings cannot be created by the SDK.** A meeting must pre-exist (created manually or via the Zoom REST API with server-to-server OAuth). This POC uses a fixed meeting ID from env config; dynamic per-class meeting creation for the LMS will require the REST API integration.
 
 ### SDK Documentation Quality
 - **Adequate but scattered.** The official docs cover the basics but miss edge cases.
@@ -100,8 +113,10 @@
 
 ### UI Restrictions
 1. **Cannot fully customize the meeting UI.** The toolbar, participant panel, and video layout are rendered by Zoom and cannot be replaced with custom React components.
-2. **CSS overrides are fragile.** SDK updates can change internal class names and break custom styling.
-3. **Limited branding.** Zoom logo can be hidden but no white-label option without Video SDK.
+2. **Client View ignores your container.** The SDK injects a full-page `#zmmtg-root` element directly under `<body>` — the meeting covers the entire viewport regardless of where your "container" div sits. Verified in this POC: our styled meeting container is bypassed entirely. Embedding the meeting inside an LMS layout requires the Component View (`EmbeddedClient`), a separate integration with fewer features.
+3. **CSS overrides are fragile.** SDK updates can change internal class names and break custom styling.
+4. **Limited branding.** Zoom logo can be hidden but no white-label option without Video SDK.
+5. **Leftover DOM after leaving.** The injected `#zmmtg-root` persists after `leaveMeeting`; SPA navigation away from the meeting page needs manual cleanup.
 
 ### Customization Limitations
 1. Only custom buttons added to the "More" dropdown; cannot reorder or replace toolbar buttons.
@@ -118,6 +133,8 @@
 ### Authentication Constraints
 1. No built-in user authentication; you must implement your own session/auth layer.
 2. Meeting signature (JWT) has no user identity — anyone with a valid signature can join.
+3. **Signature endpoint must be protected in production.** This POC's `/api/signature` is open (per POC spec); in the LMS it must sit behind the LMS session so only enrolled students can mint attendee signatures and only teachers can mint host (role 1) signatures.
+4. **Silent failure mode:** malformed signatures (wrong `tokenExp` format, clock skew, key mismatch) cause an infinite "Joining meeting..." hang rather than a clear error — hard to debug without JWT payload inspection.
 
 ### Licensing Limitations
 1. **Meeting SDK is not free for production.** Requires a Zoom plan (Pro, Business, or Enterprise) for meetings longer than 40 minutes.
@@ -126,11 +143,13 @@
 4. **Bandwidth and storage** costs can add up at scale.
 
 ### Technical Constraints
-1. React 18.2.0 peer dependency — incompatible with React 19+ (requires `--legacy-peer-deps`).
+1. React 18.2.0 peer dependency — incompatible with React 19+ (requires `--legacy-peer-deps`). **Workaround used in this POC:** load the SDK via Zoom's CDN (`source.zoom.us`) with its own bundled React vendor scripts, bypassing npm peer deps entirely.
 2. The SDK bundles Redux internally (React-Redux dependency).
 3. Large bundle size: the WASM media files add ~5-10 MB to page load.
 4. No offline support; requires persistent internet connection.
 5. The legacy API returns `ZoomMtg` with a `generateSDKSignature` method that is deprecated; you must implement your own server-side signature generation.
+6. **Aggressive version deprecation.** Zoom supports web SDK versions for a limited window (~1 year) and force-deprecates old ones — the pinned CDN version (6.2.0) will need periodic bumps, and a deprecated version fails at join time. This is an operational maintenance commitment for the LMS.
+7. **Meeting creation requires a separate integration.** The Meeting SDK only joins meetings; creating them per class/session requires the Zoom REST API with server-to-server OAuth credentials (a second Marketplace app + token flow).
 
 ---
 
@@ -164,11 +183,13 @@
 | **Total** | **4-8 weeks** | For production-ready integration |
 
 ### Risks
-1. **React 19 compatibility.** The SDK requires React 18.2.0 peer dependency. Using `--legacy-peer-deps` may cause subtle runtime issues.
-2. **Mobile strategy gap.** Mobile browsers (iOS Safari) have poor support; native mobile SDKs require separate development.
-3. **UI inconsistency.** The Zoom SDK UI looks different from the LMS, which may confuse users.
-4. **Cost at scale.** If the LMS grows to hundreds of concurrent meetings, Zoom licensing costs become significant.
-5. **Dependency on Zoom.** Any Zoom API changes or outages directly affect the LMS.
+1. **React 19 compatibility.** The SDK requires React 18.2.0 peer dependency. This POC sidesteps it via CDN loading, but that trades npm version management for manual CDN version pinning.
+2. **Forced SDK upgrades.** Zoom deprecates web SDK versions on ~1-year cycles; a stale pinned version stops joining meetings. Requires ongoing maintenance in the LMS.
+3. **Mobile strategy gap.** Mobile browsers (iOS Safari) have poor support; native mobile SDKs require separate development.
+4. **UI inconsistency.** The Zoom SDK UI looks different from the LMS, which may confuse users. The Client View takes over the full viewport, so the LMS shell disappears during class.
+5. **Cost at scale.** If the LMS grows to hundreds of concurrent meetings, Zoom licensing costs become significant.
+6. **Dependency on Zoom.** Any Zoom API changes or outages directly affect the LMS.
+7. **Debuggability.** Signature/config errors commonly fail silently (infinite spinner). Production integration needs join timeouts, JWT validation on the server, and telemetry around join success rates.
 
 ### Future Migration Considerations (e.g., LiveKit)
 **LiveKit** is a strong alternative for the future:

@@ -9,19 +9,21 @@ export interface SignaturePayload {
 }
 
 export function generateSignature(
-  meetingNumber: string,
+  meetingNumber: string | number,
   role: number
 ): string {
-  const iat = Math.round(new Date().getTime() / 1000);
+  // Backdate iat slightly to tolerate clock skew between server and Zoom
+  const iat = Math.round(new Date().getTime() / 1000) - 30;
   const exp = iat + 60 * 60 * 2;
 
   const payload = {
     appKey: zoomConfig.sdkKey,
     sdkKey: zoomConfig.sdkKey,
-    mn: meetingNumber,
+    mn: Number(meetingNumber),
     role,
     iat,
     exp,
+    // tokenExp must be an absolute Unix timestamp (>= iat + 1800), not a duration
     tokenExp: exp,
   };
 
