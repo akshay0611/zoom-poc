@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Zoom Meeting SDK — Proof of Concept
 
-## Getting Started
+Evaluating the Zoom Meeting SDK for integration into the MBT LMS MVP.
 
-First, run the development server:
+## Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+┌─────────────────────────────────────────────────┐
+│                   Browser                         │
+│  ┌──────────────┐       ┌────────────────────┐   │
+│  │  Landing Page │------>│  Teacher / Student  │   │
+│  │  / (page.tsx) │       │  Meeting Pages      │   │
+│  └──────────────┘       └──────────┬─────────┘   │
+│                                     │             │
+│                            ┌────────▼────────┐   │
+│                            │  ZoomMeeting     │   │
+│                            │  Component       │   │
+│                            │  (ZoomMtg SDK)   │   │
+│                            └────────┬────────┘   │
+│                                     │             │
+└─────────────────────────────────────┼─────────────┘
+                                      │
+              ┌───────────────────────┼───────────┐
+              │         Next.js Server            │
+              │  ┌───────────────────▼────────┐   │
+              │  │  /api/signature            │   │
+              │  │  (Generates JWT via        │   │
+              │  │   jsonwebtoken)            │   │
+              │  └────────────────────────────┘   │
+              └───────────────────────────────────┘
+                                      │
+                            ┌─────────▼──────────┐
+                            │   Zoom Meeting SDK  │
+                            │   Services (Cloud)  │
+                            └────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Prerequisites
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Node.js 20+
+- npm
+- Zoom Meeting SDK account with an app created in the [Zoom Marketplace](https://marketplace.zoom.us/)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Setup
 
-## Learn More
+```bash
+# 1. Install dependencies
+npm install
 
-To learn more about Next.js, take a look at the following resources:
+# 2. Copy environment variables
+cp .env.example .env.local
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# 3. Fill in your Zoom credentials in .env.local
+#    Get SDK Key and Secret from your Zoom Marketplace app
+#    (Apps > [Your App] > App Credentials)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# 4. Run the development server
+npm run dev
+```
 
-## Deploy on Vercel
+## Environment Variables
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_ZOOM_SDK_KEY` | SDK Key from Zoom Marketplace |
+| `ZOOM_SDK_SECRET` | SDK Secret from Zoom Marketplace |
+| `NEXT_PUBLIC_ZOOM_MEETING_NUMBER` | Meeting ID to join |
+| `NEXT_PUBLIC_ZOOM_MEETING_PASSCODE` | Meeting passcode |
+| `NEXT_PUBLIC_ZOOM_SIGNATURE_ENDPOINT` | API route for signature (default: `/api/signature`) |
+| `NEXT_PUBLIC_ZOOM_TEACHER_NAME` | Display name for teacher |
+| `NEXT_PUBLIC_ZOOM_STUDENT_NAME` | Default display name for student |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Usage
+
+1. Open `http://localhost:3000`
+2. Click **Join as Teacher** to host a meeting
+3. Click **Join as Student** to join as a participant
+4. Verify audio, video, chat, screen share, and raise hand
+
+## Project Structure
+
+```
+├── app/
+│   ├── api/signature/route.ts    # Backend signature endpoint
+│   ├── teacher/page.tsx           # Teacher meeting page
+│   ├── student/page.tsx           # Student join & meeting page
+│   └── page.tsx                   # Landing page
+├── components/
+│   └── ZoomMeeting.tsx            # Shared Zoom SDK component
+├── config/
+│   └── zoom.ts                    # Zoom configuration
+├── lib/
+│   └── zoom-signature.ts          # Server-side JWT generation
+└── EVALUATION.md                  # Full evaluation report
+```
+
+## SDK Version
+
+- `@zoom/meetingsdk`: `6.2.0`
+- Next.js: `16.2.10`
+- React: `19.2.4`
